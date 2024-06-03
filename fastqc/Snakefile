@@ -1,0 +1,45 @@
+INPUT_DIR = <input_dir>
+OUTPUT_DIR = <output_dir>
+
+import os
+from snakemake.utils import min_version
+from urllib.parse import urljoin
+
+min_version("7.2.1")
+
+##### Config processing #####
+
+is_paired = "True"
+read_pair_tags = ["R1", "R2"]
+sample_name = ["Pat1_CAF","Pat2_CAF","Pat3_CAF","Pat1_CTRL","Pat2_CTRL","Pat3_CTRL"]
+
+
+wildcard_constraints:
+    sample = "|".join(sample_name),
+    read_pair_tag = "R1|R2|SE"
+
+##### Target rule #####
+
+rule all:
+    input: OUTPUT_DIR+"/qc_reports/raw_fastq_multiqc.html"
+
+
+##### workflow rules #####
+
+rule raw_fastq_qc:
+    input: raw_fastq=INPUT_DIR+"/raw_fastq/{sample}_{read_pair_tag}.fastq.gz"
+    output: html=OUTPUT_DIR+"/raw_fastq/{sample}_{read_pair_tag}_fastqc.html",
+            zip=OUTPUT_DIR+"/raw_fastq/{sample}_{read_pair_tag}_fastqc.zip"
+    log: "logs/{sample}/raw_fastqc_{read_pair_tag}.log"
+    params: extra ="--noextract --format fastq --nogroup",
+    conda: "wrappers/fastq_qc/env.yaml"
+    shell: "fastqc -o $(dirname {output.html}) {params.extra} {input.raw_fastq} >> {log} 2>&1"
+
+
+rule merge_raw_fastq_qc:
+    input:  html=expand(OUTPUT_DIR+"/raw_fastq/{sample}_{read_pair_tag}_fastqc.html",sample=sample_name,read_pair_tag=read_pair_tags),
+            zip=expand(OUTPUT_DIR+"/raw_fastq/{sample}_{read_pair_tag}_fastqc.zip",sample=sample_name,read_pair_tag=read_pair_tags)
+    output: html=OUTPUT_DIR+"/qc_reports/raw_fastq_multiqc.html"
+    log: "logs/merge_raw_fastq_qc.log"
+    conda: "wrappers/merge_fastq_qc/env.yaml"
+    shell: "multiqc -f -n {output.html} {input.zip} --cl_config \"{{read_count_multiplier: 0.001, read_count_prefix: 'K', read_count_desc: 'thousands' }}\" >> {log} 2>&1"

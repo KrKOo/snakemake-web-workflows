@@ -1,0 +1,17 @@
+# These values will be replaced with the ones you define in the input fields
+INPUT_DIR = <input_dir>
+OUTPUT_DIR = <output_dir>
+
+rule test:
+    input: 
+        OUTPUT_DIR + "out1.txt"
+    output:
+        OUTPUT_DIR + "final_out.txt"
+    shell:
+        "cat {input} >> {output}"
+
+rule test1:
+    output:
+        OUTPUT_DIR + "out1.txt"
+    shell:
+        "touch {output} && echo hello > {output}"
