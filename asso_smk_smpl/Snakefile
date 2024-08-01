@@ -1,6 +1,30 @@
-# These values will be replaced with the ones you define in the input fields
-INPUT_DIR = <input_dir>
-OUTPUT_DIR = <output_dir>
+from snakemake_storage_plugin_http import HTTPTokenAuth
+import os
+
+envvars:
+    "ACCESS_TOKEN",
+    "RESULT_BUCKET",
+    "INPUT_URL",
+    "TMP_DIR",
+    "USER_ID",
+    "INBOX_HOST",
+    "DOWNLOAD_HOST",
+    "WORKFLOW_ID" 
+
+storage inbox:
+    provider="s3",
+    endpoint_url=os.environ["INBOX_HOST"],
+    access_key=os.environ["USER_ID"],
+    secret_key=os.environ["USER_ID"],
+    token=os.environ["ACCESS_TOKEN"],
+
+storage sai:
+    provider="http",
+    auth=HTTPTokenAuth(os.environ["ACCESS_TOKEN"])
+
+INPUT_URL = os.path.join(os.environ["DOWNLOAD_HOST"], "s3", os.environ["INPUT_URL"])
+TMP_DIR = os.path.join(os.environ["TMP_DIR"], os.environ["WORKFLOW_ID"])
+RESULT_URL = os.path.join("s3://", os.environ["RESULT_BUCKET"], os.environ["TMP_DIR"])
 
 configfile: "config/config.yaml"
 
@@ -8,19 +32,18 @@ containerized: "docker://axschmidt/gwas_pipeline:0.1"
 
 rule all:
     input:
-        expand(OUTPUT_DIR+"/results/regenie_association_merged/{phenotypes}.regenie.gz", phenotypes=config["phenotype"]["phenotype_columns"] ),
-        expand(OUTPUT_DIR+"/results/regenie_association_merged_QC/{phenotypes}_LOG10P_manhattan.png", phenotypes=config["phenotype"]["phenotype_columns"] )
-
+        storage.inbox(expand(RESULT_URL+"/results/regenie_association_merged/{phenotypes}.regenie.gz", phenotypes=config["phenotype"]["phenotype_columns"] )),
+        storage.inbox(expand(RESULT_URL+"/results/regenie_association_merged_QC/{phenotypes}_LOG10P_manhattan.png", phenotypes=config["phenotype"]["phenotype_columns"] )) 
 
 ##### >>> file preparation #####
 
 rule prune_common:
     input:
-        fam=INPUT_DIR+"/"+config["genotype"]["genotype_plink_prefix"] + ".fam",
-        bim=INPUT_DIR+"/"+config["genotype"]["genotype_plink_prefix"] + ".bim",
-        bed=INPUT_DIR+"/"+config["genotype"]["genotype_plink_prefix"] + ".bed",
+        fam=storage.sai(INPUT_URL+"/"+config["genotype"]["genotype_plink_prefix"] + ".fam"),
+        bim=storage.sai(INPUT_URL+"/"+config["genotype"]["genotype_plink_prefix"] + ".bim"),
+        bed=storage.sai(INPUT_URL+"/"+config["genotype"]["genotype_plink_prefix"] + ".bed"),
     output:
-        pruned_variant_set=OUTPUT_DIR+"/results/prune_common/prune_common.prune.in",
+        pruned_variant_set=TMP_DIR+"/results/prune_common/prune_common.prune.in",
     # resources: cpus=1, mem_mb=18000, time_job=720, partition=config["medium_part"]
     params:		
         out_prefix=lambda wildcards, output: output["pruned_variant_set"][:-9],
@@ -41,12 +64,12 @@ rule prune_common:
 
 rule PCA_for_cov:
     input:
-        fam=INPUT_DIR+"/"+config["genotype"]["genotype_plink_prefix"] + ".fam",
-        bim=INPUT_DIR+"/"+config["genotype"]["genotype_plink_prefix"] + ".bim",
-        bed=INPUT_DIR+"/"+config["genotype"]["genotype_plink_prefix"] + ".bed",
-        pruned_variant_set=OUTPUT_DIR+"/results/prune_common/prune_common.prune.in",
+        fam=storage.sai(INPUT_URL+"/"+config["genotype"]["genotype_plink_prefix"] + ".fam"),
+        bim=storage.sai(INPUT_URL+"/"+config["genotype"]["genotype_plink_prefix"] + ".bim"),
+        bed=storage.sai(INPUT_URL+"/"+config["genotype"]["genotype_plink_prefix"] + ".bed"),
+        pruned_variant_set=TMP_DIR+"/results/prune_common/prune_common.prune.in",
     output:
-        eigenv=OUTPUT_DIR+"/results/covar_PCA/common_vars.eigenvec"
+        eigenv=TMP_DIR+"/results/covar_PCA/common_vars.eigenvec"
     # resources: cpus=1, mem_mb=18000, time_job=720, partition=config["medium_part"],
     params:		
         out_prefix=lambda wildcards, output: output["eigenv"][:-9],
@@ -62,9 +85,9 @@ rule PCA_for_cov:
 
 rule make_regenie_pheno:
     input:
-        sample_sheet_file=INPUT_DIR+"/"+config["phenotype"]["sample_sheet"],
+        sample_sheet_file=storage.sai(INPUT_URL+"/"+config["phenotype"]["sample_sheet"]),
     output:
-        pheno_file=OUTPUT_DIR+"/results/pheno_cov/pheno.pheno",
+        pheno_file=TMP_DIR+"/results/pheno_cov/pheno.pheno",
     params: 
         pheno_columns=config["phenotype"]["phenotype_columns"],
     conda: "envs/R_tidyverse.yaml"
@@ -74,10 +97,10 @@ rule make_regenie_pheno:
 
 rule make_regenie_cov:
     input:
-        sample_sheet_file=INPUT_DIR+"/"+config["phenotype"]["sample_sheet"],
-        cov_pcs_file=OUTPUT_DIR+"/results/covar_PCA/common_vars.eigenvec",
+        sample_sheet_file=storage.sai(INPUT_URL+"/"+config["phenotype"]["sample_sheet"]),
+        cov_pcs_file=TMP_DIR+"/results/covar_PCA/common_vars.eigenvec",
     output:
-        cov_file=OUTPUT_DIR+"/results/pheno_cov/cov.cov",
+        cov_file=TMP_DIR+"/results/pheno_cov/cov.cov",
     params: 
         cov_columns=config["phenotype"]["covariate_columns"],
         covariates_nPC=config["phenotype"]["covariates_nPC"],
@@ -88,11 +111,11 @@ rule make_regenie_cov:
 
 rule convert_imputed_vcf:
     input:
-        imputed_vcf=expand(INPUT_DIR+"/"+config["genotype"]["imp_prefix"] + "{contig}" + config["genotype"]["imp_postfix"], contig=config["genotype"]["imp_contigs"]),
+        imputed_vcf=storage.sai(expand(INPUT_URL+"/"+config["genotype"]["imp_prefix"] + "{contig}" + config["genotype"]["imp_postfix"], contig=config["genotype"]["imp_contigs"])),
     output:
-        pgen=OUTPUT_DIR+"/results/imp_converted/chr{contig}.pgen",
-        psam=OUTPUT_DIR+"/results/imp_converted/chr{contig}.psam",
-        pvar=OUTPUT_DIR+"/results/imp_converted/chr{contig}.pvar",
+        pgen=TMP_DIR+"/results/imp_converted/chr{contig}.pgen",
+        psam=TMP_DIR+"/results/imp_converted/chr{contig}.psam",
+        pvar=TMP_DIR+"/results/imp_converted/chr{contig}.pvar",
     params:
         plink_out=lambda wildcards, output: output["pgen"][:-5],
         dosage_param=config["genotype"]["dosage_param"]
@@ -115,20 +138,20 @@ rule convert_imputed_vcf:
 
 rule regenie_association:
     input:
-        cov=OUTPUT_DIR+"/results/pheno_cov/cov.cov",
-        pheno=OUTPUT_DIR+"/results/pheno_cov/pheno.pheno",
-        step2_pgen=expand(OUTPUT_DIR+"/results/imp_converted/chr{contig}.pgen", contig=config["genotype"]["imp_contigs"]),
-        step2_pvar=expand(OUTPUT_DIR+"/results/imp_converted/chr{contig}.pvar", contig=config["genotype"]["imp_contigs"]),
-        step2_psam=expand(OUTPUT_DIR+"/results/imp_converted/chr{contig}.psam", contig=config["genotype"]["imp_contigs"])
+        cov=TMP_DIR+"/results/pheno_cov/cov.cov",
+        pheno=TMP_DIR+"/results/pheno_cov/pheno.pheno",
+        step2_pgen=expand(TMP_DIR+"/results/imp_converted/chr{contig}.pgen", contig=config["genotype"]["imp_contigs"]),
+        step2_pvar=expand(TMP_DIR+"/results/imp_converted/chr{contig}.pvar", contig=config["genotype"]["imp_contigs"]),
+        step2_psam=expand(TMP_DIR+"/results/imp_converted/chr{contig}.psam", contig=config["genotype"]["imp_contigs"])
     output:
-        step2_NQ2=expand(OUTPUT_DIR+"/results/regenie_association/{contig}_{phenotypes}.regenie.gz", 
+        step2_NQ2=expand(TMP_DIR+"/results/regenie_association/{contig}_{phenotypes}.regenie.gz", 
             contig=config["genotype"]["imp_contigs"],
             phenotypes=config["phenotype"]["phenotype_columns"],
             allow_missing=True)
     params:
         plink_in=lambda wildcards, input: input["step2_pgen"][0][:-5],
-        local_prefix=lambda widlcards, output: output["step2_NQ2"][0].split(OUTPUT_DIR)[0],
-        out_prefix=expand(OUTPUT_DIR + "/results/regenie_association/{contig}", contig=config["genotype"]["imp_contigs"])
+        local_prefix=lambda widlcards, output: output["step2_NQ2"][0].split(TMP_DIR)[0],
+        out_prefix=expand(TMP_DIR + "/results/regenie_association/{contig}", contig=config["genotype"]["imp_contigs"])
     conda: "envs/regenie.yaml"
     shell:
         """
@@ -148,12 +171,12 @@ rule regenie_association:
         
 rule merge_regenie_results:
     input:
-        expand(OUTPUT_DIR+"/results/regenie_association/{contig}_{phenotypes}.regenie.gz", contig=config["genotype"]["imp_contigs"], allow_missing=True), 
+        expand(TMP_DIR+"/results/regenie_association/{contig}_{phenotypes}.regenie.gz", contig=config["genotype"]["imp_contigs"], allow_missing=True), 
     output:
-        merged_assoc=OUTPUT_DIR+"/results/regenie_association_merged/{phenotypes}.regenie.gz",
+        merged_assoc=TMP_DIR+"/results/regenie_association_merged/{phenotypes}.regenie.gz",
     params:
-        local_prefix=lambda widlcards, output: output["merged_assoc"].split(OUTPUT_DIR)[0],
-        header=OUTPUT_DIR+"/results/regenie_association_merged/header_{phenotypes}.txt"
+        local_prefix=lambda widlcards, output: output["merged_assoc"].split(TMP_DIR)[0],
+        header=TMP_DIR+"/results/regenie_association_merged/header_{phenotypes}.txt"
     conda: "envs/tabix.yaml"
     shell:
         """
@@ -177,9 +200,9 @@ rule merge_regenie_results:
 
 rule generate_qq_plots:
     input:
-        merged_assoc=OUTPUT_DIR+"/results/regenie_association_merged/{phenotypes}.regenie.gz",
+        merged_assoc=TMP_DIR+"/results/regenie_association_merged/{phenotypes}.regenie.gz",
     output:
-        out=OUTPUT_DIR+"/results/regenie_association_merged_QC/{phenotypes}_LOG10P_manhattan.png"
+        out=TMP_DIR+"/results/regenie_association_merged_QC/{phenotypes}_LOG10P_manhattan.png"
     # resources: cpus=1, mem_mb=30000, time_job=720
     params:
         output_prefix=lambda wildcards, output: output["out"][:-21],
@@ -189,3 +212,18 @@ rule generate_qq_plots:
     conda: "envs/R_qqplot.yaml"
     script: "scripts/qqplot.R"
 ##### <<< QC of association results #####
+
+
+##### >>> upload results #####
+rule upload_results:
+    input:
+        expand(TMP_DIR+"/results/regenie_association_merged/{phenotypes}.regenie.gz", phenotypes=config["phenotype"]["phenotype_columns"] ),
+        expand(TMP_DIR+"/results/regenie_association_merged_QC/{phenotypes}_LOG10P_manhattan.png", phenotypes=config["phenotype"]["phenotype_columns"] )
+    output:
+        storage.inbox(expand(RESULT_URL+"/results/regenie_association_merged/{phenotypes}.regenie.gz", phenotypes=config["phenotype"]["phenotype_columns"] )),
+        storage.inbox(expand(RESULT_URL+"/results/regenie_association_merged_QC/{phenotypes}_LOG10P_manhattan.png", phenotypes=config["phenotype"]["phenotype_columns"] )) 
+    run:
+        for src, dest in zip(input, output):
+            shell("cp {src} {dest}")
+        
+
