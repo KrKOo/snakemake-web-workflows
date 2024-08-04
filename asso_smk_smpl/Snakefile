@@ -4,7 +4,8 @@ import os
 envvars:
     "ACCESS_TOKEN",
     "RESULT_BUCKET",
-    "INPUT_URL",
+    "INPUT_DIR",
+    "OUTPUT_DIR",
     "TMP_DIR",
     "USER_ID",
     "INBOX_HOST",
@@ -22,9 +23,9 @@ storage sai:
     provider="http",
     auth=HTTPTokenAuth(os.environ["ACCESS_TOKEN"])
 
-INPUT_URL = os.path.join(os.environ["DOWNLOAD_HOST"], "s3", os.environ["INPUT_URL"])
+INPUT_URL = os.path.join(os.environ["DOWNLOAD_HOST"], "s3", os.environ["INPUT_DIR"])
 TMP_DIR = os.path.join(os.environ["TMP_DIR"], os.environ["WORKFLOW_ID"])
-RESULT_URL = os.path.join("s3://", os.environ["RESULT_BUCKET"], os.environ["TMP_DIR"])
+RESULT_URL = os.path.join("s3://", os.environ["RESULT_BUCKET"], os.environ["OUTPUT_DIR"])
 
 configfile: "config/config.yaml"
 
