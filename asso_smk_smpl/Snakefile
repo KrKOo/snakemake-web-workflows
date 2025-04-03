@@ -1,10 +1,8 @@
-from snakemake_storage_plugin_http import HTTPTokenAuth
 import os
 
 envvars:
     "ACCESS_TOKEN",
     "RESULT_BUCKET",
-    "INPUT_DIR",
     "OUTPUT_DIR",
     "TMP_DIR",
     "USER_ID",
@@ -19,11 +17,7 @@ storage inbox:
     secret_key=os.environ["USER_ID"],
     token=os.environ["ACCESS_TOKEN"],
 
-storage sai:
-    provider="http",
-    auth=HTTPTokenAuth(os.environ["ACCESS_TOKEN"])
-
-INPUT_URL = os.path.join(os.environ["DOWNLOAD_HOST"], "s3", os.environ["INPUT_DIR"])
+DATASET = "dataset"
 TMP_DIR = os.path.join(os.environ["TMP_DIR"], os.environ["WORKFLOW_ID"])
 RESULT_URL = os.path.join("s3://", os.environ["RESULT_BUCKET"], os.environ["OUTPUT_DIR"])
 
@@ -40,9 +34,9 @@ rule all:
 
 rule prune_common:
     input:
-        fam=storage.sai(INPUT_URL+"/"+config["genotype"]["genotype_plink_prefix"] + ".fam"),
-        bim=storage.sai(INPUT_URL+"/"+config["genotype"]["genotype_plink_prefix"] + ".bim"),
-        bed=storage.sai(INPUT_URL+"/"+config["genotype"]["genotype_plink_prefix"] + ".bed"),
+        fam=DATASET+"/"+config["genotype"]["genotype_plink_prefix"] + ".fam",
+        bim=DATASET+"/"+config["genotype"]["genotype_plink_prefix"] + ".bim",
+        bed=DATASET+"/"+config["genotype"]["genotype_plink_prefix"] + ".bed",
     output:
         pruned_variant_set=TMP_DIR+"/results/prune_common/prune_common.prune.in",
     # resources: cpus=1, mem_mb=18000, time_job=720, partition=config["medium_part"]
@@ -65,9 +59,9 @@ rule prune_common:
 
 rule PCA_for_cov:
     input:
-        fam=storage.sai(INPUT_URL+"/"+config["genotype"]["genotype_plink_prefix"] + ".fam"),
-        bim=storage.sai(INPUT_URL+"/"+config["genotype"]["genotype_plink_prefix"] + ".bim"),
-        bed=storage.sai(INPUT_URL+"/"+config["genotype"]["genotype_plink_prefix"] + ".bed"),
+        fam=DATASET+"/"+config["genotype"]["genotype_plink_prefix"] + ".fam",
+        bim=DATASET+"/"+config["genotype"]["genotype_plink_prefix"] + ".bim",
+        bed=DATASET+"/"+config["genotype"]["genotype_plink_prefix"] + ".bed",
         pruned_variant_set=TMP_DIR+"/results/prune_common/prune_common.prune.in",
     output:
         eigenv=TMP_DIR+"/results/covar_PCA/common_vars.eigenvec"
@@ -86,7 +80,7 @@ rule PCA_for_cov:
 
 rule make_regenie_pheno:
     input:
-        sample_sheet_file=storage.sai(INPUT_URL+"/"+config["phenotype"]["sample_sheet"]),
+        sample_sheet_file=DATASET+"/"+config["phenotype"]["sample_sheet"],
     output:
         pheno_file=TMP_DIR+"/results/pheno_cov/pheno.pheno",
     params: 
@@ -98,7 +92,7 @@ rule make_regenie_pheno:
 
 rule make_regenie_cov:
     input:
-        sample_sheet_file=storage.sai(INPUT_URL+"/"+config["phenotype"]["sample_sheet"]),
+        sample_sheet_file=DATASET+"/"+config["phenotype"]["sample_sheet"],
         cov_pcs_file=TMP_DIR+"/results/covar_PCA/common_vars.eigenvec",
     output:
         cov_file=TMP_DIR+"/results/pheno_cov/cov.cov",
@@ -112,7 +106,7 @@ rule make_regenie_cov:
 
 rule convert_imputed_vcf:
     input:
-        imputed_vcf=storage.sai(expand(INPUT_URL+"/"+config["genotype"]["imp_prefix"] + "{contig}" + config["genotype"]["imp_postfix"], contig=config["genotype"]["imp_contigs"])),
+        imputed_vcf=expand(DATASET+"/"+config["genotype"]["imp_prefix"] + "{contig}" + config["genotype"]["imp_postfix"], contig=config["genotype"]["imp_contigs"]),
     output:
         pgen=TMP_DIR+"/results/imp_converted/chr{contig}.pgen",
         psam=TMP_DIR+"/results/imp_converted/chr{contig}.psam",
