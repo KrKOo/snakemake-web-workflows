@@ -1,17 +1,51 @@
-# These values will be replaced with the ones you define in the input fields
-INPUT_DIR = <input_dir>
-OUTPUT_DIR = <output_dir>
+import os
 
-rule test:
+envvars:
+    "ACCESS_TOKEN",
+    "RESULT_BUCKET",
+    "OUTPUT_DIR",
+    "TMP_DIR",
+    "USER_ID",
+    "INBOX_HOST",
+    "DOWNLOAD_HOST",
+    "WORKFLOW_ID" 
+
+storage inbox:
+    provider="s3",
+    endpoint_url=os.environ["INBOX_HOST"],
+    access_key=os.environ["USER_ID"],
+    secret_key=os.environ["USER_ID"],
+    token=os.environ["ACCESS_TOKEN"],
+
+DATASET = "dataset"
+TMP_DIR = os.path.join(os.environ["TMP_DIR"], os.environ["WORKFLOW_ID"])
+RESULT_URL = os.path.join("s3://", os.environ["RESULT_BUCKET"], os.environ["OUTPUT_DIR"])
+
+
+rule all: 
+    pass
+
+rule lines:
     input: 
-        OUTPUT_DIR + "out1.txt"
+        DATASET + "/input_files/samples_phenotypes.tsv"
     output:
-        OUTPUT_DIR + "final_out.txt"
+        TMP_DIR + "/lines.txt"
     shell:
-        "cat {input} >> {output}"
+        "wc -l {input} > {output}"
 
-rule test1:
+rule words:
+    input: 
+        DATASET + "/input_files/samples_phenotypes.tsv"
     output:
-        OUTPUT_DIR + "out1.txt"
+        TMP_DIR + "/words.txt"
     shell:
-        "touch {output} && echo hello > {output}"
+        "wc -w {input} > {output}"
+
+rule merge:
+    input:
+        lines=TMP_DIR + "/lines.txt",
+        words=TMP_DIR + "/words.txt"
+    output:
+        storage.inbox(RESULT_URL + "/merged.txt")
+    shell:
+        "cat {input.lines} {input.words} > {output}"
