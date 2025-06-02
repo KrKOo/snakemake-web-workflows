@@ -23,7 +23,8 @@ RESULT_URL = os.path.join("s3://", os.environ["RESULT_BUCKET"], os.environ["OUTP
 
 
 rule all: 
-    pass
+    input:
+        storage.inbox(RESULT_URL + "/merged.txt")
 
 rule lines:
     input: 
