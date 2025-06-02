@@ -1,4 +1,7 @@
 {
   "id": "dcd961d8-4c4b-402c-b20c-c3b885163e4b",
-  "name": "Hello world"
+  "name": "Hello world",
+  "input_mapping": {
+    "dataset": "sda://{dataset}"
+  }
 }
